@@ -751,3 +751,25 @@ ReactDOM.render(
   document.getElementById("root")
 );
 //main.tsx
+
+
+import csv
+import json
+import os
+
+# Define the path to your CSV file and the output JSON file
+csv_file_path = 'data.csv'
+json_file_path = 'data.json'
+
+# Read the CSV file and convert to JSON
+csv_data = []
+with open(csv_file_path, mode='r', encoding='utf-8') as csv_file:
+    csv_reader = csv.DictReader(csv_file)
+    for row in csv_reader:
+        csv_data.append(row)
+
+# Write the JSON data to a file
+with open(json_file_path, mode='w', encoding='utf-8') as json_file:
+    json.dump(csv_data, json_file, indent=2)
+
+print(f'CSV file has been successfully converted to JSON and saved as {json_file_path}')
