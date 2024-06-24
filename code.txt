@@ -1,3 +1,90 @@
+import React, { useState, useEffect } from 'react';
+import GraphWithProvider from './GraphWithProvider'; // Adjust the import path as per your project
+
+const App: React.FC = () => {
+  const [sliderValue, setSliderValue] = useState<number>(0);
+  const [jsonData, setJsonData] = useState<any[]>([]); // State to store JSON data
+
+  useEffect(() => {
+    // Function to fetch JSON data
+    const fetchData = async () => {
+      try {
+        const response = await fetch('/data.json'); // Adjust path as per your JSON file location
+        if (!response.ok) {
+          throw new Error('Failed to fetch JSON data');
+        }
+        const data = await response.json();
+        setJsonData(data); // Set JSON data to state
+      } catch (error) {
+        console.error('Error fetching JSON data:', error);
+      }
+    };
+
+    fetchData(); // Call the fetch function when component mounts
+  }, []);
+
+  const controlsStyles = {
+    marginBottom: '20px',
+    padding: '10px',
+    backgroundColor: '#f0f0f0',
+    boxShadow: '0 0 5px rgba(0, 0, 0, 0.2)',
+  };
+
+  const controlsLabelStyles = {
+    marginRight: '10px',
+    fontSize: '16px',
+  };
+
+  const controlsInputStyles = {
+    marginRight: '10px',
+    marginLeft: '10px',
+  };
+
+  const controlsSpanStyles = {
+    fontSize: '16px',
+    fontWeight: 'bold',
+  };
+
+  const graphContainerStyles = {
+    padding: '20px',
+    border: '1px solid #ccc',
+    borderRadius: '5px',
+    backgroundColor: '#fff',
+  };
+
+  return (
+    <div style={{ height: "100vh", overflow: "hidden" }}>
+      <div style={controlsStyles}>
+        <label style={controlsLabelStyles}>
+          Slider Value:
+          <input
+            type="range"
+            min="0"
+            max="100"
+            value={sliderValue}
+            onChange={(e) => setSliderValue(parseInt(e.target.value, 10))}
+            style={controlsInputStyles}
+          />
+          <span style={controlsSpanStyles}>{sliderValue}</span>
+        </label>
+      </div>
+      <div style={graphContainerStyles}>
+        {/* Pass jsonData to GraphWithProvider */}
+        <GraphWithProvider data={jsonData} />
+      </div>
+    </div>
+  );
+};
+
+export default App;
+
+
+
+
+
+
+
+
 import React, { useState, useEffect } from "react";
 import ReactFlow, {
   MiniMap,
