@@ -757,6 +757,9 @@ import csv
 import json
 import os
 
+import csv
+import json
+
 # Define the path to your CSV file and the output JSON file
 csv_file_path = 'data.csv'
 json_file_path = 'data.json'
@@ -764,12 +767,19 @@ json_file_path = 'data.json'
 # Read the CSV file and convert to JSON
 csv_data = []
 with open(csv_file_path, mode='r', encoding='utf-8') as csv_file:
-    csv_reader = csv.DictReader(csv_file)
+    csv_reader = csv.reader(csv_file)
+    headers = next(csv_reader)  # Read the header row
+    headers = headers[1:]  # Remove the first column header
     for row in csv_reader:
-        csv_data.append(row)
+        # Remove the first column from each row
+        row_data = row[1:]
+        # Convert the row to a dictionary
+        row_dict = dict(zip(headers, row_data))
+        csv_data.append(row_dict)
 
 # Write the JSON data to a file
 with open(json_file_path, mode='w', encoding='utf-8') as json_file:
     json.dump(csv_data, json_file, indent=2)
 
 print(f'CSV file has been successfully converted to JSON and saved as {json_file_path}')
+
