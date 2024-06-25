@@ -1,37 +1,73 @@
+import React, { useState, useEffect, useMemo } from "react";
+import GraphWithProvider from "./HierarchicalGraph"; // Adjust the path as necessary
+import {
+  controlsStyles,
+  controlsLabelStyles,
+  controlsInputStyles,
+  controlsSpanStyles,
+  graphContainerStyles,
+} from "./styles";
 
-import React, { useState, useEffect } from 'react';
-import GraphWithProvider from './GraphWithProvider'; // Adjust the import path as per your project
-import Papa from 'papaparse';
+interface DataItem {
+  parent_node: string | null;
+  node: string;
+  graph_depth: number;
+  type: string;
+  name: string;
+  value: string;
+}
 
 const App: React.FC = () => {
   const [sliderValue, setSliderValue] = useState<number>(0);
-  const [csvData, setCsvData] = useState<any[]>([]); // State to store CSV data
+  const [rawData, setRawData] = useState<DataItem[]>([]);
 
   useEffect(() => {
-    // Function to fetch CSV data
-    const fetchData = async () => {
-      try {
-        const response = await fetch('/data.csv'); // Adjust path as per your CSV file location
-        if (!response.ok) {
-          throw new Error('Failed to fetch CSV data');
-        }
-        const reader = response.body.getReader();
-        const result = await reader.read(); // raw array
-        const decoder = new TextDecoder('utf-8');
-        const csv = decoder.decode(result.value); // the csv text
-        const results = Papa.parse(csv, { header: true }); // object with { data, errors, meta }
-        const rows = results.data; // array of objects
-        setCsvData(rows); // Set CSV data to state
-      } catch (error) {
-        console.error('Error fetching CSV data:', error);
-      }
-    };
-    fetchData(); // Call the fetch function when component mounts
+    // Fetch data from the REST API
+    fetch("https://your-api-endpoint.com/data") // Replace with your actual API endpoint
+      .then((response) => response.json())
+      .then((data) => {
+        // Convert graph_depth to number
+        const processedData = data.map((item: any) => ({
+          ...item,
+          graph_depth: Number(item.graph_depth),
+        }));
+        setRawData(processedData);
+      })
+      .catch((error) => {
+        console.error("Error fetching data:", error);
+      });
   }, []);
 
-  // ... rest of your code
+  const processedData = useMemo(() => {
+    // Process the rawData here if needed
+    return rawData;
+  }, [rawData]);
+
+  return (
+    <div style={{ height: "100vh", overflow: "hidden" }}>
+      <div style={controlsStyles}>
+        <label style={controlsLabelStyles}>
+          Slider Value:
+          <input
+            type="range"
+            min="0"
+            max="100"
+            value={sliderValue}
+            onChange={(e) => setSliderValue(parseInt(e.target.value, 10))}
+            style={controlsInputStyles}
+          />
+          <span style={controlsSpanStyles}>{sliderValue}</span>
+        </label>
+      </div>
+      <div style={graphContainerStyles}>
+        <GraphWithProvider data={processedData} sliderValue={sliderValue} />
+      </div>
+    </div>
+  );
 };
+
 export default App;
+
 
 
 
