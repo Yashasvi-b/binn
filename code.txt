@@ -1,3 +1,77 @@
+
+
+
+import React, { useState, useMemo } from "react";
+import GraphWithProvider from "./components/HierarchicalGraph";
+import rawData from "./data.json";
+
+const controlsStyles = {
+  marginBottom: "20px",
+};
+
+const controlsLabelStyles = {
+  marginRight: "10px",
+};
+
+const controlsInputStyles = {
+  marginRight: "10px",
+};
+
+const controlsSpanStyles = {
+  fontWeight: "bold",
+};
+
+const graphContainerStyles = {
+  height: "calc(100vh - 50px)", // Adjust the height based on your controls' height
+  overflow: "hidden",
+};
+
+const App: React.FC = () => {
+  const [sliderValue, setSliderValue] = useState<number>(0);
+
+  // Use useMemo to memoize the processed data
+  const processedData = useMemo(() => {
+    // Process the rawData here if needed
+    const parsedData = rawData.map((item) => ({
+      ...item,
+      graph_depth: parseInt(item.graph_depth, 10), // Explicitly assert item.graph_depth as string
+    }));
+    return parsedData;
+  }, [rawData]);
+
+  return (
+    <div style={{ height: "100vh", overflow: "hidden" }}>
+      <div style={controlsStyles}>
+        <label style={controlsLabelStyles}>
+          Slider Value:
+          <input
+            type="range"
+            min="0"
+            max="100"
+            value={sliderValue}
+            onChange={(e) => setSliderValue(parseInt(e.target.value, 10))}
+            style={controlsInputStyles}
+          />
+          <span style={controlsSpanStyles}>{sliderValue}</span>
+        </label>
+      </div>
+      <div style={graphContainerStyles}>
+        <GraphWithProvider data={processedData} sliderValue={sliderValue} />
+      </div>
+    </div>
+  );
+};
+
+export default App;
+
+
+
+---------------------------------------------------------------------------------------------------------------------
+
+
+
+
+
 import React, { useState, useEffect, useMemo } from "react";
 import GraphWithProvider from "./HierarchicalGraph"; // Adjust the path as necessary
 import {
