@@ -11,8 +11,6 @@ import ReactFlow, {
   Connection,
   NodeMouseEvent,
 } from 'react-flow-renderer';
-import 'react-flow-renderer/dist/style.css';
-
 import axios from 'axios';
 import dagre from 'dagre';
 import {
@@ -117,17 +115,17 @@ const App: React.FC = () => {
           child.isHidden = false;
         });
         setNodes(prevNodes => {
-          const updatedNodes = [...prevNodes, ...hiddenNodes];
+          const updatedNodes = prevNodes.map(node => (
+            node.id === clickedNode.id ? { ...node, isHidden: false } : node
+          ));
           return updatedNodes;
         });
         generateEdges(clickedNode.id);
       } else {
         setNodes(prevNodes => {
-          const updatedNodes = prevNodes.map(n =>
-            childNodes.some(child => child.id === n.id)
-              ? { ...n, isHidden: true }
-              : n
-          );
+          const updatedNodes = prevNodes.map(node => (
+            childNodes.some(child => child.id === node.id) ? { ...node, isHidden: true } : node
+          ));
           const remainingEdges = edges.filter(
             edge => !childNodes.some(child => edge.target === child.id)
           );
@@ -148,6 +146,13 @@ const App: React.FC = () => {
     }
   };
 
+  const uniqueNodes = allNodes.reduce<Node[]>((acc, current) => {
+    if (!acc.find(node => node.id === current.id)) {
+      acc.push(current);
+    }
+    return acc;
+  }, []);
+
   return (
     <div style={graphContainerStyles}>
       <div style={navbarStyles}>
@@ -163,7 +168,7 @@ const App: React.FC = () => {
         <label style={controlsLabelStyles}>
           Parent Node:
           <select style={controlsSelectStyles} value={selectedParentNode} onChange={handleParentNodeChange}>
-            {allNodes.map(node => (
+            {uniqueNodes.map(node => (
               <option key={node.id} value={node.id}>
                 {node.data.label}
               </option>
