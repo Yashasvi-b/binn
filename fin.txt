@@ -4,26 +4,24 @@ import ReactFlow, {
   Controls,
   Background,
   addEdge,
-  useNodesState,
-  useEdgesState,
+  useNodes,
+  useEdges,
   ReactFlowProvider,
   Node,
   Edge,
   Connection,
-  NodeMouseHandler,
-} from 'reactflow';
-import 'reactflow/dist/style.css';
+  NodeMouseEvent,
+} from 'react-flow-renderer';
+import 'react-flow-renderer/dist/style.css';
 import axios from 'axios';
 import dagre from 'dagre';
 import {
   graphContainerStyles,
-  controlsStyles,
   controlsLabelStyles,
   controlsSelectStyles,
-  controlsInputStyles,
   reactflowWrapperStyles,
   navbarStyles,
-} from './styles';  // import the styles
+} from './styles'; // Import the styles
 
 interface NodeData {
   node: string;
@@ -47,7 +45,7 @@ const getLayoutedNodes = (nodes: Node[], edges: Edge[], direction = 'TB') => {
   dagreGraph.setGraph({ rankdir: direction });
 
   nodes.forEach((node) => {
-    dagreGraph.setNode(node.id, { width: nodeWidth, height: nodeHeight });
+    dagreGraph.setNode(node.id as string, { width: nodeWidth, height: nodeHeight });
   });
 
   edges.forEach((edge) => {
@@ -57,7 +55,7 @@ const getLayoutedNodes = (nodes: Node[], edges: Edge[], direction = 'TB') => {
   dagre.layout(dagreGraph);
 
   return nodes.map((node) => {
-    const nodeWithPosition = dagreGraph.node(node.id);
+    const nodeWithPosition = dagreGraph.node(node.id as string);
     node.position = {
       x: nodeWithPosition.x - nodeWidth / 2,
       y: nodeWithPosition.y - nodeHeight / 2,
@@ -80,10 +78,9 @@ const getNodeColor = (type: string) => {
 };
 
 const App: React.FC = () => {
-  const [nodes, setNodes, onNodesChange] = useNodesState<Node>(initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(initialEdges);
+  const [nodes, setNodes] = useNodes<Node>();
+  const [edges, setEdges] = useEdges<Edge>();
   const [allNodes, setAllNodes] = useState<Node[]>([]);
-  const [allEdges, setAllEdges] = useState<Edge[]>([]);
   const [direction, setDirection] = useState('TB');
   const [selectedParentNode, setSelectedParentNode] = useState<string>('');
 
@@ -99,7 +96,7 @@ const App: React.FC = () => {
           data: {
             label: item.node,
             value: item.value,
-            graphdepth: item.graphDepth,
+            graphDepth: item.graphDepth,
             parentNode: item.parentNode,
           },
           position: { x: 0, y: 0 },
@@ -114,6 +111,7 @@ const App: React.FC = () => {
             id: `e-${item.parentNode}-${item.node}`,
             source: item.parentNode as string,
             target: item.node,
+            type: 'smoothstep',
           }));
 
         setAllNodes(processedNodes);
@@ -131,67 +129,69 @@ const App: React.FC = () => {
     fetchNodes();
   }, [setNodes]);
 
-  const generateEdges = useCallback((nodeId: string) => {
-    const newEdges = allNodes
-      .filter(node => node.data.parentNode === nodeId)
-      .map(node => ({
-        id: `e-${node.data.parentNode}-${node.id}`,
-        source: node.data.parentNode as string,
-        target: node.id,
-      }));
-    setEdges(prevEdges => [...prevEdges, ...newEdges]);
-  }, [allNodes, setEdges]);
+  const generateEdges = useCallback(
+    (nodeId: string) => {
+      const newEdges = allNodes
+        .filter((node) => node.data.parentNode === nodeId)
+        .map((node) => ({
+          id: `e-${node.data.parentNode}-${node.id}`,
+          source: node.data.parentNode as string,
+          target: node.id as string,
+          type: 'smoothstep',
+        }));
+      setEdges((prevEdges) => [...prevEdges, ...newEdges]);
+    },
+    [allNodes, setEdges]
+  );
 
-  const onNodeClick: NodeMouseHandler = useCallback((event, node) => {
-    const childNodes = allNodes.filter(n => n.data.parentNode === node.id);
-    if (childNodes.length > 0) {
-      const hiddenNodes = childNodes.filter(n => n.hidden);
-      if (hiddenNodes.length > 0) {
-        // Expand nodes
-        hiddenNodes.forEach(child => {
-          child.hidden = false;
-        });
-        setNodes(prevNodes => {
-          const updatedNodes = [...prevNodes, ...hiddenNodes];
-          return getLayoutedNodes(updatedNodes, edges, direction);
-        });
-        generateEdges(node.id);
-      } else {
-        // Collapse nodes
-        setNodes(prevNodes => {
-          const updatedNodes = prevNodes.map(n =>
-            childNodes.some(child => child.id === n.id)
-              ? { ...n, hidden: true }
-              : n
-          );
-          const remainingEdges = edges.filter(
-            edge => !childNodes.some(child => edge.target === child.id)
-          );
-          setEdges(remainingEdges);
-          return getLayoutedNodes(updatedNodes, remainingEdges, direction);
-        });
+  const onNodeClick: NodeMouseEvent = useCallback(
+    (event, node) => {
+      const childNodes = allNodes.filter((n) => n.data.parentNode === node.id);
+      if (childNodes.length > 0) {
+        const hiddenNodes = childNodes.filter((n) => n.hidden);
+        if (hiddenNodes.length > 0) {
+          // Expand nodes
+          hiddenNodes.forEach((child) => {
+            child.hidden = false;
+          });
+          setNodes((prevNodes) => {
+            const updatedNodes = [...prevNodes, ...hiddenNodes];
+            return getLayoutedNodes(updatedNodes, edges, direction);
+          });
+          generateEdges(node.id as string);
+        } else {
+          // Collapse nodes
+          setNodes((prevNodes) => {
+            const updatedNodes = prevNodes.map((n) =>
+              childNodes.some((child) => child.id === n.id) ? { ...n, hidden: true } : n
+            );
+            const remainingEdges = edges.filter(
+              (edge) => !childNodes.some((child) => edge.target === child.id)
+            );
+            setEdges(remainingEdges);
+            return getLayoutedNodes(updatedNodes, remainingEdges, direction);
+          });
+        }
       }
-    }
-    setNodes(prevNodes =>
-      getLayoutedNodes(prevNodes.map(n =>
-        n.id === node.id ? { ...n, hidden: false } : n
-      ), edges, direction)
-    );
-  }, [allNodes, edges, generateEdges, direction]);
-
-  const onConnect = useCallback(
-    (params: Edge | Connection) => setEdges((eds) => addEdge(params, eds)),
-    [setEdges]
+      setNodes((prevNodes) =>
+        getLayoutedNodes(
+          prevNodes.map((n) => (n.id === node.id ? { ...n, hidden: false } : n)),
+          edges,
+          direction
+        )
+      );
+    },
+    [allNodes, edges, direction, generateEdges, setNodes, setEdges]
   );
 
   useEffect(() => {
     setNodes((nds) => getLayoutedNodes(nds, edges, direction));
-  }, [edges, direction]);
+  }, [edges, direction, setNodes]);
 
   const handleParentNodeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const selectedNodeId = e.target.value;
     setSelectedParentNode(selectedNodeId);
-    const selectedNode = allNodes.find(node => node.id === selectedNodeId);
+    const selectedNode = allNodes.find((node) => node.id === selectedNodeId);
     if (selectedNode) {
       setNodes([{ ...selectedNode, hidden: false }]);
       setEdges([]);
@@ -203,7 +203,11 @@ const App: React.FC = () => {
       <div style={navbarStyles}>
         <label style={controlsLabelStyles}>
           Direction:
-          <select style={controlsSelectStyles} value={direction} onChange={(e) => setDirection(e.target.value)}>
+          <select
+            style={controlsSelectStyles}
+            value={direction}
+            onChange={(e) => setDirection(e.target.value)}
+          >
             <option value="TB">Top-Bottom</option>
             <option value="BT">Bottom-Top</option>
             <option value="LR">Left-Right</option>
@@ -212,8 +216,12 @@ const App: React.FC = () => {
         </label>
         <label style={controlsLabelStyles}>
           Parent Node:
-          <select style={controlsSelectStyles} value={selectedParentNode} onChange={handleParentNodeChange}>
-            {allNodes.filter(node => !node.data.parentNode).map(node => (
+          <select
+            style={controlsSelectStyles}
+            value={selectedParentNode}
+            onChange={handleParentNodeChange}
+          >
+            {allNodes.map((node) => (
               <option key={node.id} value={node.id}>
                 {node.data.label}
               </option>
@@ -223,13 +231,36 @@ const App: React.FC = () => {
       </div>
       <div style={reactflowWrapperStyles}>
         <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onNodeClick={onNodeClick}
-          onConnect={onConnect}
-          fitView
+          elements={nodes.concat(edges)}
+          onElementsRemove={() => {}}
+          onConnect={(params) => setEdges((prev) => addEdge(params, prev))}
+          onNodeDoubleClick={() => {}}
+          onEdgeDoubleClick={() => {}}
+          onSelectionChange={() => {}}
+          onContextMenu={() => {}}
+          onElementClick={() => {}}
+          onNodeDragStart={() => {}}
+          onNodeDrag={() => {}}
+          onNodeDragStop={() => {}}
+          onEdgeUpdate={() => {}}
+          onLoad={() => {}}
+          onMove={() => {}}
+          onNodeMouseEnter={() => {}}
+          onNodeMouseMove={() => {}}
+          onNodeMouseLeave={() => {}}
+          onEdgeMouseEnter={() => {}}
+          onEdgeMouseMove={() => {}}
+          onEdgeMouseLeave={() => {}}
+          onSelectionDragStart={() => {}}
+          onSelectionDrag={() => {}}
+          onSelectionDragStop={() => {}}
+          connectionLineComponent={() => null}
+          deleteKeyCode={8}
+          multiSelectionKeyCode="shift"
+          zoomActivationKeyCode="shift"
+          selectionKeyCode="shift"
+          selectAllKeyCode="shift"
+          paneMoveKeyCode="shift"
         >
           <Controls />
           <MiniMap />
