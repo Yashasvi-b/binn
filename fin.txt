@@ -4,13 +4,15 @@ import ReactFlow, {
   Controls,
   Background,
   addEdge,
-  removeElements,
+  useNodesState,
+  useEdgesState,
   ReactFlowProvider,
   Node,
   Edge,
   Connection,
-  NodeMouseEvent,
-} from 'react-flow-renderer';
+  NodeMouseHandler,
+} from 'reactflow';
+import 'reactflow/dist/style.css';
 import axios from 'axios';
 import dagre from 'dagre';
 import {
@@ -19,7 +21,7 @@ import {
   controlsSelectStyles,
   reactflowWrapperStyles,
   navbarStyles,
-} from './styles';  // Import your styles
+} from './styles'; // import the styles
 
 interface NodeData {
   node: string;
@@ -35,6 +37,32 @@ const initialEdges: Edge[] = [];
 const dagreGraph = new dagre.graphlib.Graph();
 dagreGraph.setDefaultEdgeLabel(() => ({}));
 
+const getLayoutedNodes = (nodes: Node[], edges: Edge[], direction = 'TB') => {
+  const nodeWidth = 172;
+  const nodeHeight = 36;
+
+  dagreGraph.setGraph({ rankdir: direction });
+
+  nodes.forEach((node) => {
+    dagreGraph.setNode(node.id, { width: nodeWidth, height: nodeHeight });
+  });
+
+  edges.forEach((edge) => {
+    dagreGraph.setEdge(edge.source, edge.target);
+  });
+
+  dagre.layout(dagreGraph);
+
+  return nodes.map((node) => {
+    const nodeWithPosition = dagreGraph.node(node.id);
+    node.position = {
+      x: nodeWithPosition.x - nodeWidth / 2,
+      y: nodeWithPosition.y - nodeHeight / 2,
+    };
+    return node;
+  });
+};
+
 const getNodeColor = (type: string) => {
   switch (type) {
     case 'input':
@@ -49,13 +77,15 @@ const getNodeColor = (type: string) => {
 };
 
 const App: React.FC = () => {
-  const [nodes, setNodes] = useState<Node[]>(initialNodes);
-  const [edges, setEdges] = useState<Edge[]>(initialEdges);
+  const [nodes, setNodes, onNodesChange] = useNodesState<Node>(initialNodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(initialEdges);
   const [allNodes, setAllNodes] = useState<Node[]>([]);
+  const [allEdges, setAllEdges] = useState<Edge[]>([]);
   const [direction, setDirection] = useState('TB');
   const [selectedParentNode, setSelectedParentNode] = useState<string>('');
 
   useEffect(() => {
+    // Replace with your API endpoint
     const fetchNodes = async () => {
       try {
         const response = await axios.get<NodeData[]>('https://api.example.com/nodes');
@@ -71,6 +101,7 @@ const App: React.FC = () => {
           },
           position: { x: 0, y: 0 },
           draggable: true,
+          hidden: true,
           style: { backgroundColor: getNodeColor(item.type || 'default') },
         }));
 
@@ -83,82 +114,101 @@ const App: React.FC = () => {
           }));
 
         setAllNodes(processedNodes);
-        setNodes(processedNodes.filter(node => !node.data.parentNode)); // Set initial nodes to root nodes
+        setAllEdges(processedEdges);
 
-        setEdges(processedEdges);
+        // Set the first node (root node) as the initial node
+        if (processedNodes.length > 0) {
+          setNodes([{ ...processedNodes[0], hidden: false }]);
+        }
       } catch (error) {
         console.error('Error fetching node data', error);
       }
     };
 
     fetchNodes();
-  }, []);
+  }, [setNodes]);
 
   const generateEdges = useCallback((nodeId: string) => {
     const newEdges = allNodes
-      .filter(node => node.data.parentNode === nodeId)
-      .map(node => ({
+      .filter((node) => node.data.parentNode === nodeId)
+      .map((node) => ({
         id: `e-${node.data.parentNode}-${node.id}`,
         source: node.data.parentNode as string,
         target: node.id,
       }));
-    setEdges(prevEdges => [...prevEdges, ...newEdges]);
-  }, [allNodes]);
+    setEdges((prevEdges) => [...prevEdges, ...newEdges]);
+  }, [allNodes, setEdges]);
 
-  const onNodeClick = useCallback((event: NodeMouseEvent) => {
-    const clickedNode = event.target;
-    const childNodes = allNodes.filter(n => n.data.parentNode === clickedNode.id);
+  const onNodeClick: NodeMouseHandler = useCallback((event, node) => {
+    const childNodes = allNodes.filter((n) => n.data.parentNode === node.id);
     if (childNodes.length > 0) {
-      const hiddenNodes = childNodes.filter(n => n.isHidden);
+      const hiddenNodes = childNodes.filter((n) => n.hidden);
       if (hiddenNodes.length > 0) {
-        hiddenNodes.forEach(child => {
-          child.isHidden = false;
+        // Expand nodes
+        hiddenNodes.forEach((child) => {
+          child.hidden = false;
         });
-        setNodes(prevNodes => {
-          const updatedNodes = prevNodes.map(node => (
-            node.id === clickedNode.id ? { ...node, isHidden: false } : node
-          ));
-          return updatedNodes;
+        setNodes((prevNodes) => {
+          const updatedNodes = [...prevNodes, ...hiddenNodes];
+          return getLayoutedNodes(updatedNodes, edges, direction);
         });
-        generateEdges(clickedNode.id);
+        generateEdges(node.id);
       } else {
-        setNodes(prevNodes => {
-          const updatedNodes = prevNodes.map(node => (
-            childNodes.some(child => child.id === node.id) ? { ...node, isHidden: true } : node
-          ));
+        // Collapse nodes
+        setNodes((prevNodes) => {
+          const updatedNodes = prevNodes.map((n) =>
+            childNodes.some((child) => child.id === n.id)
+              ? { ...n, hidden: true }
+              : n
+          );
           const remainingEdges = edges.filter(
-            edge => !childNodes.some(child => edge.target === child.id)
+            (edge) => !childNodes.some((child) => edge.target === child.id)
           );
           setEdges(remainingEdges);
-          return updatedNodes;
+          return getLayoutedNodes(updatedNodes, remainingEdges, direction);
         });
       }
     }
-  }, [allNodes, edges, generateEdges]);
+    setNodes((prevNodes) =>
+      getLayoutedNodes(
+        prevNodes.map((n) =>
+          n.id === node.id ? { ...n, hidden: false } : n
+        ),
+        edges,
+        direction
+      )
+    );
+  }, [allNodes, edges, generateEdges, direction]);
+
+  const onConnect = useCallback(
+    (params: Edge | Connection) => setEdges((eds) => addEdge(params, eds)),
+    [setEdges]
+  );
+
+  useEffect(() => {
+    setNodes((nds) => getLayoutedNodes(nds, edges, direction));
+  }, [edges, direction]);
 
   const handleParentNodeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const selectedNodeId = e.target.value;
     setSelectedParentNode(selectedNodeId);
-    const selectedNode = allNodes.find(node => node.id === selectedNodeId);
+    const selectedNode = allNodes.find((node) => node.id === selectedNodeId);
     if (selectedNode) {
-      setNodes([{ ...selectedNode, isHidden: false }]);
+      setNodes([{ ...selectedNode, hidden: false }]);
       setEdges([]);
     }
   };
-
-  const uniqueNodes = allNodes.reduce<Node[]>((acc, current) => {
-    if (!acc.find(node => node.id === current.id)) {
-      acc.push(current);
-    }
-    return acc;
-  }, []);
 
   return (
     <div style={graphContainerStyles}>
       <div style={navbarStyles}>
         <label style={controlsLabelStyles}>
           Direction:
-          <select style={controlsSelectStyles} value={direction} onChange={(e) => setDirection(e.target.value)}>
+          <select
+            style={controlsSelectStyles}
+            value={direction}
+            onChange={(e) => setDirection(e.target.value)}
+          >
             <option value="TB">Top-Bottom</option>
             <option value="BT">Bottom-Top</option>
             <option value="LR">Left-Right</option>
@@ -167,8 +217,12 @@ const App: React.FC = () => {
         </label>
         <label style={controlsLabelStyles}>
           Parent Node:
-          <select style={controlsSelectStyles} value={selectedParentNode} onChange={handleParentNodeChange}>
-            {uniqueNodes.map(node => (
+          <select
+            style={controlsSelectStyles}
+            value={selectedParentNode}
+            onChange={handleParentNodeChange}
+          >
+            {allNodes.map((node) => (
               <option key={node.id} value={node.id}>
                 {node.data.label}
               </option>
@@ -178,17 +232,17 @@ const App: React.FC = () => {
       </div>
       <div style={reactflowWrapperStyles}>
         <ReactFlow
-          elements={nodes.concat(edges)}
-          onElementsRemove={elements => setEdges(prevEdges => removeElements(elements, prevEdges))}
-          onConnect={(params) => setEdges((prevEdges) => addEdge(params, prevEdges))}
-          onElementClick={onNodeClick}
-          onLoad={instance => {
-            instance.fitView();
-          }}
+          nodes={nodes}
+          edges={edges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onNodeClick={onNodeClick}
+          onConnect={onConnect}
+          fitView
         >
           <Controls />
           <MiniMap />
-          <Background />
+          <Background variant="dots" gap={12} size={1} />
         </ReactFlow>
       </div>
     </div>
