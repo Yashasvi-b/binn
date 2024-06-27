@@ -83,9 +83,9 @@ const App: React.FC = () => {
   const [allEdges, setAllEdges] = useState<Edge[]>([]);
   const [direction, setDirection] = useState('TB');
   const [selectedParentNode, setSelectedParentNode] = useState<string>('');
+  const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
 
   useEffect(() => {
-    // Replace with your API endpoint
     const fetchNodes = async () => {
       try {
         const response = await axios.get<NodeData[]>('https://api.example.com/nodes');
@@ -139,46 +139,68 @@ const App: React.FC = () => {
     setEdges((prevEdges) => [...prevEdges, ...newEdges]);
   }, [allNodes, setEdges]);
 
-  const onNodeClick: NodeMouseHandler = useCallback((event, node) => {
+  const expandNode = useCallback((node: Node) => {
     const childNodes = allNodes.filter((n) => n.data.parentNode === node.id);
     if (childNodes.length > 0) {
-      const hiddenNodes = childNodes.filter((n) => n.hidden);
-      if (hiddenNodes.length > 0) {
-        // Expand nodes
-        hiddenNodes.forEach((child) => {
-          child.hidden = false;
+      const newNodes = [...nodes];
+      const newEdges = [...edges];
+
+      childNodes.forEach((child) => {
+        const position = {
+          x: node.position.x + (Math.random() - 0.5) * 200,
+          y: node.position.y + 100,
+        };
+        newNodes.push({
+          ...child,
+          position,
+          hidden: false,
+          style: { backgroundColor: getNodeColor(child.data.type || 'default') },
         });
-        setNodes((prevNodes) => {
-          const updatedNodes = [...prevNodes, ...hiddenNodes];
-          return getLayoutedNodes(updatedNodes, edges, direction);
+
+        newEdges.push({
+          id: `${node.id}-${child.id}`,
+          source: node.id,
+          target: child.id,
+          type: 'smoothstep',
+          animated: false,
         });
-        generateEdges(node.id);
-      } else {
-        // Collapse nodes
-        setNodes((prevNodes) => {
-          const updatedNodes = prevNodes.map((n) =>
-            childNodes.some((child) => child.id === n.id)
-              ? { ...n, hidden: true }
-              : n
-          );
-          const remainingEdges = edges.filter(
-            (edge) => !childNodes.some((child) => edge.target === child.id)
-          );
-          setEdges(remainingEdges);
-          return getLayoutedNodes(updatedNodes, remainingEdges, direction);
-        });
-      }
+
+        if (expandedNodes.has(child.id)) {
+          expandNode(child);
+        }
+      });
+
+      setNodes(newNodes);
+      setEdges(newEdges);
     }
-    setNodes((prevNodes) =>
-      getLayoutedNodes(
-        prevNodes.map((n) =>
-          n.id === node.id ? { ...n, hidden: false } : n
-        ),
-        edges,
-        direction
-      )
-    );
-  }, [allNodes, edges, generateEdges, direction]);
+  }, [allNodes, nodes, edges, expandedNodes]);
+
+  const onNodeClick: NodeMouseHandler = useCallback((event, node) => {
+    const currentExpandedNodes = new Set(expandedNodes);
+
+    if (currentExpandedNodes.has(node.id)) {
+      // Collapse the node
+      currentExpandedNodes.delete(node.id);
+      const nodesToKeep = nodes.filter(
+        (n) => !allNodes.some(
+          (an) => an.data.parentNode === node.id && an.id === n.id
+        )
+      );
+      const edgesToKeep = edges.filter(
+        (e) => !allNodes.some(
+          (an) => an.data.parentNode === node.id && e.source === node.id && e.target === an.id
+        )
+      );
+      setNodes(nodesToKeep);
+      setEdges(edgesToKeep);
+    } else {
+      // Expand the node
+      currentExpandedNodes.add(node.id);
+      expandNode(node);
+    }
+
+    setExpandedNodes(currentExpandedNodes);
+  }, [allNodes, nodes, edges, expandedNodes, expandNode]);
 
   const onConnect = useCallback(
     (params: Edge | Connection) => setEdges((eds) => addEdge(params, eds)),
@@ -189,6 +211,15 @@ const App: React.FC = () => {
     setNodes((nds) => getLayoutedNodes(nds, edges, direction));
   }, [edges, direction]);
 
+  useEffect(() => {
+    setNodes((nds) => 
+      nds.map((node) => ({
+        ...node,
+        style: { backgroundColor: getNodeColor(node.type || 'default') }
+      }))
+    );
+  }, [nodes]);
+
   const handleParentNodeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const selectedNodeId = e.target.value;
     setSelectedParentNode(selectedNodeId);
@@ -198,6 +229,9 @@ const App: React.FC = () => {
       setEdges([]);
     }
   };
+
+  // Get unique parent nodes for the dropdown
+  const uniqueParentNodes = Array.from(new Set(allNodes.map((node) => node.data.parentNode))).filter(Boolean) as string[];
 
   return (
     <div style={graphContainerStyles}>
@@ -222,11 +256,14 @@ const App: React.FC = () => {
             value={selectedParentNode}
             onChange={handleParentNodeChange}
           >
-            {allNodes.map((node) => (
-              <option key={node.id} value={node.id}>
-                {node.data.label}
-              </option>
-            ))}
+            {uniqueParentNodes.map((nodeId) => {
+              const node = allNodes.find((n) => n.id === nodeId);
+              return node ? (
+                <option key={node.id} value={node.id}>
+                  {node.data.label}
+                </option>
+              ) : null;
+            })}
           </select>
         </label>
       </div>
@@ -240,16 +277,16 @@ const App: React.FC = () => {
           onConnect={onConnect}
           fitView
         >
+          <MiniMap nodeColor={(n) => getNodeColor(n.type || 'default')} />
           <Controls />
-          <MiniMap />
-          <Background variant="dots" gap={12} size={1} />
+          <Background />
         </ReactFlow>
       </div>
     </div>
   );
 };
 
-const WrappedApp: React.FC = () => (
+const WrappedApp = () => (
   <ReactFlowProvider>
     <App />
   </ReactFlowProvider>
