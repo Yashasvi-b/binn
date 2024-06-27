@@ -1,57 +1,67 @@
 const App: React.FC = () => {
-  // Existing code...
+  // Existing state and useEffects...
 
   return (
     <div style={{ display: 'flex', height: '100vh' }}>
       {/* Sidebar */}
-      <div style={{ width: '20%', background: '#f0f0f0', padding: '10px', boxSizing: 'border-box' }}>
-        <div style={navbarStyles}>
-          <label style={controlsLabelStyles}>
-            Direction:
-            <select
-              style={controlsSelectStyles}
-              value={direction}
-              onChange={(e) => setDirection(e.target.value)}
-            >
-              <option value="TB">Top-Bottom</option>
-              <option value="BT">Bottom-Top</option>
-              <option value="LR">Left-Right</option>
-              <option value="RL">Right-Left</option>
-            </select>
-          </label>
-          <label style={controlsLabelStyles}>
-            Parent Node:
-            <select
-              style={controlsSelectStyles}
-              value={selectedParentNode}
-              onChange={handleParentNodeChange}
-            >
-              {uniqueParentNodes.map((nodeId) => {
-                const node = allNodes.find((n) => n.id === nodeId);
-                return node ? (
-                  <option key={node.id} value={node.id}>
-                    {node.data.label}
-                  </option>
-                ) : null;
-              })}
-            </select>
-          </label>
-        </div>
+      <div style={{ width: panelOpen ? '20%' : '0', minWidth: '200px', background: '#f0f0f0', padding: '10px', boxSizing: 'border-box', overflowX: 'hidden', transition: 'width 0.3s ease' }}>
+        {panelOpen && (
+          <div style={navbarStyles}>
+            <label style={controlsLabelStyles}>
+              Direction:
+              <select
+                style={controlsSelectStyles}
+                value={direction}
+                onChange={(e) => setDirection(e.target.value)}
+              >
+                <option value="TB">Top-Bottom</option>
+                <option value="BT">Bottom-Top</option>
+                <option value="LR">Left-Right</option>
+                <option value="RL">Right-Left</option>
+              </select>
+            </label>
+            <label style={controlsLabelStyles}>
+              Parent Node:
+              <select
+                style={controlsSelectStyles}
+                value={selectedParentNode}
+                onChange={handleParentNodeChange}
+              >
+                {uniqueParentNodes.map((nodeId) => {
+                  const node = allNodes.find((n) => n.id === nodeId);
+                  return node ? (
+                    <option key={node.id} value={node.id}>
+                      {node.data.label}
+                    </option>
+                  ) : null;
+                })}
+              </select>
+            </label>
+          </div>
+        )}
+        <button onClick={() => setPanelOpen(!panelOpen)} style={{ position: 'absolute', top: '10px', right: '10px' }}>
+          {panelOpen ? 'Close Panel' : 'Open Panel'}
+        </button>
       </div>
 
       {/* Main content area */}
-      <div style={{ flex: 1 }}>
+      <div style={{ flex: 1, position: 'relative' }}>
         <div style={graphContainerStyles}>
           <div style={reactflowWrapperStyles}>
             <ReactFlow
-              nodes={nodes}
-              edges={edges}
-              onNodesChange={onNodesChange}
-              onEdgesChange={onEdgesChange}
-              onNodeClick={onNodeClick}
+              elements={{ nodes, edges }}
+              onLoad={onLoad}
+              onElementClick={onElementClick}
               onConnect={onConnect}
+              onElementsRemove={onElementsRemove}
+              onNodeDragStop={onNodeDragStop}
+              onNodeDoubleClick={onNodeDoubleClick}
               deleteKeyCode={46} /* enable delete key for node removal */
-              onLoad={setReactFlowInstance}
+              connectionLineStyle={connectionLineStyle}
+              nodeTypes={nodeTypes}
+              nodesDraggable={true}
+              nodesConnectable={true}
+              elementsSelectable={true}
             >
               <MiniMap
                 nodeStrokeColor={(n) => {
@@ -78,3 +88,5 @@ const App: React.FC = () => {
     </div>
   );
 };
+
+export default App;
