@@ -63,7 +63,11 @@ const getLayoutedNodes = (nodes: Node[], edges: Edge[], direction = 'TB') => {
   });
 };
 
-const getNodeColor = (type: string) => {
+const getNodeColor = (type: string, isLeaf: boolean) => {
+  if (isLeaf) {
+    return '#7CFC00'; // Green for leaf nodes
+  }
+
   switch (type) {
     case 'input':
       return '#FFD700'; // Gold
@@ -102,7 +106,7 @@ const App: React.FC = () => {
           position: { x: 0, y: 0 },
           draggable: true,
           hidden: true,
-          style: { backgroundColor: getNodeColor(item.type || 'default') },
+          style: { backgroundColor: getNodeColor(item.type || 'default', false) },
         }));
 
         const processedEdges: Edge[] = data
@@ -233,8 +237,25 @@ const App: React.FC = () => {
     }
   };
 
-  // Get unique parent nodes for the dropdown
-  const uniqueParentNodes = Array.from(new Set(allNodes.map((node) => node.data.parentNode))).filter(Boolean) as string[];
+  // Get unique leaf nodes for coloring
+  const uniqueLeafNodes = allNodes.filter((node) => {
+    return !allNodes.some((otherNode) => otherNode.data.parentNode === node.id);
+  });
+
+  // Update node styles with green color for leaf nodes
+  useEffect(() => {
+    const updatedNodes = nodes.map((node) => {
+      const isLeaf = uniqueLeafNodes.some((leafNode) => leafNode.id === node.id);
+      return {
+        ...node,
+        style: {
+          ...node.style,
+          backgroundColor: getNodeColor(node.data.type || 'default', isLeaf),
+        },
+      };
+    });
+    setNodes(updatedNodes);
+  }, [nodes, uniqueLeafNodes]);
 
   return (
     <div style={graphContainerStyles}>
