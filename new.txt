@@ -225,18 +225,19 @@ const App: React.FC = () => {
   // Get unique parent nodes for the dropdown
   const uniqueParentNodes = Array.from(new Set(allNodes.map((node) => node.data.parentNode))).filter(Boolean) as string[];
 
-  const renderNode = (node: Node) => {
-    const isLeafNode = allNodes.every((n) => n.data.parentNode !== node.id);
-    const isExpanded = expandedNodes.has(node.id);
+  const CustomNode = ({ data }) => {
+    const { label, parentNode, node } = data;
+    const isLeafNode = allNodes.every((n) => n.data.parentNode !== node);
+    const isExpanded = expandedNodes.has(node);
 
     return (
-      <div style={{ position: 'relative', padding: '5px', borderRadius: '5px', backgroundColor: isLeafNode ? '#ADD8E6' : getNodeColor(node.type), color: '#000' }}>
-        {node.data.label}
-        {isLeafNode ? null : (
+      <div style={{ position: 'relative', padding: '5px', borderRadius: '5px', backgroundColor: isLeafNode ? '#ADD8E6' : getNodeColor(data.type), color: '#000' }}>
+        {label}
+        {!isLeafNode && (
           <button
             onClick={(event) => {
               event.stopPropagation();
-              onNodeClick(event, node);
+              onNodeClick(event, { id: node, data });
             }}
             style={{ position: 'absolute', top: '5px', right: '5px', cursor: 'pointer' }}
           >
@@ -285,10 +286,7 @@ const App: React.FC = () => {
         <ReactFlow
           nodes={nodes.map((node) => ({
             ...node,
-            data: {
-              ...node.data,
-              renderNode,
-            },
+            type: 'custom',
           }))}
           edges={edges}
           onNodesChange={onNodesChange}
@@ -297,7 +295,7 @@ const App: React.FC = () => {
           onConnect={onConnect}
           fitView
           nodeTypes={{
-            custom: ({ data }) => data.renderNode(data),
+            custom: CustomNode,
           }}
         >
           <Controls />
