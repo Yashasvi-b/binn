@@ -6,6 +6,7 @@ import ReactFlow, {
   addEdge,
   useNodesState,
   useEdgesState,
+  ReactFlowProvider,
   Node,
   Edge,
   Connection,
@@ -14,7 +15,13 @@ import ReactFlow, {
 import 'reactflow/dist/style.css';
 import axios from 'axios';
 import dagre from 'dagre';
-import { sidePanel, sidePanelContent } from './styles'; // Import your styles
+import {
+  graphContainerStyles,
+  controlsLabelStyles,
+  controlsSelectStyles,
+  reactflowWrapperStyles,
+  navbarStyles,
+} from './styles'; // import the styles
 
 interface NodeData {
   node: string;
@@ -77,7 +84,6 @@ const App: React.FC = () => {
   const [direction, setDirection] = useState('TB');
   const [selectedParentNode, setSelectedParentNode] = useState<string>('');
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
-  const [sidePanelOpen, setSidePanelOpen] = useState(false);
 
   useEffect(() => {
     const fetchNodes = async () => {
@@ -122,12 +128,16 @@ const App: React.FC = () => {
     fetchNodes();
   }, [setNodes]);
 
-  const updateNodeStyles = (nodes: Node[]) => {
-    return nodes.map((node) => ({
-      ...node,
-      style: { backgroundColor: getNodeColor(node.type || 'default') },
-    }));
-  };
+  const generateEdges = useCallback((nodeId: string) => {
+    const newEdges = allNodes
+      .filter((node) => node.data.parentNode === nodeId)
+      .map((node) => ({
+        id: `e-${node.data.parentNode}-${node.id}`,
+        source: node.data.parentNode as string,
+        target: node.id,
+      }));
+    setEdges((prevEdges) => [...prevEdges, ...newEdges]);
+  }, [allNodes, setEdges]);
 
   const expandNode = useCallback((node: Node) => {
     const childNodes = allNodes.filter((n) => n.data.parentNode === node.id);
@@ -144,7 +154,6 @@ const App: React.FC = () => {
           ...child,
           position,
           hidden: false,
-          style: { backgroundColor: getNodeColor(child.type || 'default') },
         });
 
         newEdges.push({
@@ -160,7 +169,7 @@ const App: React.FC = () => {
         }
       });
 
-      setNodes(updateNodeStyles(newNodes));
+      setNodes(newNodes);
       setEdges(newEdges);
     }
   }, [allNodes, nodes, edges, expandedNodes]);
@@ -172,16 +181,18 @@ const App: React.FC = () => {
       // Collapse the node
       currentExpandedNodes.delete(node.id);
       const nodesToKeep = nodes.filter(
-        (n) => !allNodes.some(
-          (an) => an.data.parentNode === node.id && an.id === n.id
-        )
+        (n) =>
+          !allNodes
+            .filter((an) => an.data.parentNode === node.id)
+            .some((child) => child.id === n.id)
       );
       const edgesToKeep = edges.filter(
-        (e) => !allNodes.some(
-          (an) => an.data.parentNode === node.id && e.source === node.id && e.target === an.id
-        )
+        (e) =>
+          !allNodes
+            .filter((an) => an.data.parentNode === node.id)
+            .some((child) => e.source === node.id && e.target === child.id)
       );
-      setNodes(updateNodeStyles(nodesToKeep));
+      setNodes(nodesToKeep);
       setEdges(edgesToKeep);
     } else {
       // Expand the node
@@ -198,7 +209,7 @@ const App: React.FC = () => {
   );
 
   useEffect(() => {
-    setNodes((nds) => getLayoutedNodes(updateNodeStyles(nds), edges, direction));
+    setNodes((nds) => getLayoutedNodes(nds, edges, direction));
   }, [edges, direction]);
 
   const handleParentNodeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -206,7 +217,7 @@ const App: React.FC = () => {
     setSelectedParentNode(selectedNodeId);
     const selectedNode = allNodes.find((node) => node.id === selectedNodeId);
     if (selectedNode) {
-      setNodes(updateNodeStyles([{ ...selectedNode, hidden: false }]));
+      setNodes([{ ...selectedNode, hidden: false }]);
       setEdges([]);
     }
   };
@@ -214,67 +225,94 @@ const App: React.FC = () => {
   // Get unique parent nodes for the dropdown
   const uniqueParentNodes = Array.from(new Set(allNodes.map((node) => node.data.parentNode))).filter(Boolean) as string[];
 
-  return (
-    <div style={{ display: 'flex', height: '100vh' }}>
-      {/* Side Panel */}
-      <div style={{ ...sidePanel.container, ...(sidePanelOpen ? sidePanel.visible : {}) }}>
-        <div style={sidePanelContent}>
-          <label style={{ marginBottom: '10px' }}>
-            Direction:
-            <select
-              value={direction}
-              onChange={(e) => setDirection(e.target.value)}
-              style={{ marginLeft: '5px' }}
-            >
-              <option value="TB">Top-Bottom</option>
-              <option value="BT">Bottom-Top</option>
-              <option value="LR">Left-Right</option>
-              <option value="RL">Right-Left</option>
-            </select>
-          </label>
+  const renderNode = (node: Node) => {
+    const isLeafNode = allNodes.every((n) => n.data.parentNode !== node.id);
+    const isExpanded = expandedNodes.has(node.id);
 
-          <label style={{ marginBottom: '10px' }}>
-            Parent Node:
-            <select
-              value={selectedParentNode}
-              onChange={handleParentNodeChange}
-              style={{ marginLeft: '5px' }}
-            >
-              <option value="">Select Parent Node</option>
-              {uniqueParentNodes.map((nodeId) => (
-                <option key={nodeId} value={nodeId}>{nodeId}</option>
-              ))}
-            </select>
-          </label>
-        </div>
+    return (
+      <div style={{ position: 'relative', padding: '5px', borderRadius: '5px', backgroundColor: isLeafNode ? '#ADD8E6' : getNodeColor(node.type), color: '#000' }}>
+        {node.data.label}
+        {isLeafNode ? null : (
+          <button
+            onClick={(event) => {
+              event.stopPropagation();
+              onNodeClick(event, node);
+            }}
+            style={{ position: 'absolute', top: '5px', right: '5px', cursor: 'pointer' }}
+          >
+            {isExpanded ? '-' : '+'}
+          </button>
+        )}
       </div>
+    );
+  };
 
-      {/* React Flow */}
-      <ReactFlow
-        elements={nodes.concat(edges)}
-        onNodeClick={onNodeClick}
-        onConnect={onConnect}
-        nodeTypes={{
-          input: 'default',
-          output: 'default',
-          option: 'default',
-        }}
-        style={{ flex: 1, background: '#f0f0f0', position: 'relative' }}
-      >
-        <Background color="#aaa" gap={16} />
-        <MiniMap
-          style={{ width: '150px' }}
-          nodeColor={(n) => {
-            if (n.type === 'input') return 'blue';
-            return '#FFD700';
+  return (
+    <div style={graphContainerStyles}>
+      <div style={navbarStyles}>
+        <label style={controlsLabelStyles}>
+          Direction:
+          <select
+            style={controlsSelectStyles}
+            value={direction}
+            onChange={(e) => setDirection(e.target.value)}
+          >
+            <option value="TB">Top-Bottom</option>
+            <option value="BT">Bottom-Top</option>
+            <option value="LR">Left-Right</option>
+            <option value="RL">Right-Left</option>
+          </select>
+        </label>
+        <label style={controlsLabelStyles}>
+          Parent Node:
+          <select
+            style={controlsSelectStyles}
+            value={selectedParentNode}
+            onChange={handleParentNodeChange}
+          >
+            {uniqueParentNodes.map((nodeId) => {
+              const node = allNodes.find((n) => n.id === nodeId);
+              return node ? (
+                <option key={node.id} value={node.id}>
+                  {node.data.label}
+                </option>
+              ) : null;
+            })}
+          </select>
+        </label>
+      </div>
+      <div style={reactflowWrapperStyles}>
+        <ReactFlow
+          nodes={nodes.map((node) => ({
+            ...node,
+            data: {
+              ...node.data,
+              renderNode,
+            },
+          }))}
+          edges={edges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onNodeClick={onNodeClick}
+          onConnect={onConnect}
+          fitView
+          nodeTypes={{
+            custom: ({ data }) => data.renderNode(data),
           }}
-          nodeStrokeWidth={3}
-          nodeBorderRadius={2}
-        />
-        <Controls />
-      </ReactFlow>
+        >
+          <Controls />
+          <MiniMap />
+          <Background variant="dots" gap={12} size={1} />
+        </ReactFlow>
+      </div>
     </div>
   );
 };
 
-export default App;
+const WrappedApp: React.FC = () => (
+  <ReactFlowProvider>
+    <App />
+  </ReactFlowProvider>
+);
+
+export default WrappedApp;
