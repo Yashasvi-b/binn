@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from "react";
 import ReactFlow, {
   MiniMap,
   Controls,
@@ -11,17 +11,17 @@ import ReactFlow, {
   Edge,
   Connection,
   NodeMouseHandler,
-} from 'reactflow';
-import 'reactflow/dist/style.css';
-import axios from 'axios';
-import dagre from 'dagre';
+  useReactFlow,
+} from "reactflow";
+import "reactflow/dist/style.css";
+import axios from "axios";
+import dagre from "dagre";
 import {
   graphContainerStyles,
+  controlsStyles,
   controlsLabelStyles,
   controlsSelectStyles,
-  reactflowWrapperStyles,
-  navbarStyles,
-} from './styles'; // import the styles
+} from "./styles";
 
 interface NodeData {
   node: string;
@@ -31,16 +31,14 @@ interface NodeData {
   parentNode?: string | null;
 }
 
-const initialNodes: Node[] = [];
-const initialEdges: Edge[] = [];
+const nodeWidth = 172;
+const nodeHeight = 36;
 
 const dagreGraph = new dagre.graphlib.Graph();
 dagreGraph.setDefaultEdgeLabel(() => ({}));
 
-const getLayoutedNodes = (nodes: Node[], edges: Edge[], direction = 'TB') => {
-  const nodeWidth = 172;
-  const nodeHeight = 36;
-
+const getLayoutedNodes = (nodes: Node[], edges: Edge[], direction = "TB") => {
+  const isHorizontal = direction === "LR" || direction === "RL";
   dagreGraph.setGraph({ rankdir: direction });
 
   nodes.forEach((node) => {
@@ -59,54 +57,47 @@ const getLayoutedNodes = (nodes: Node[], edges: Edge[], direction = 'TB') => {
       x: nodeWithPosition.x - nodeWidth / 2,
       y: nodeWithPosition.y - nodeHeight / 2,
     };
+    (node as any).targetPosition = isHorizontal ? "left" : "top";
+    (node as any).sourcePosition = isHorizontal ? "right" : "bottom";
     return node;
   });
 };
 
-const getNodeColor = (type: string, isLeaf: boolean) => {
-  if (isLeaf) {
-    return '#7CFC00'; // Green for leaf nodes
-  }
-
-  switch (type) {
-    case 'input':
-      return '#FFD700'; // Gold
-    case 'output':
-      return '#FF6347'; // Tomato
-    case 'option':
-      return '#40E0D0'; // Turquoise
-    default:
-      return '#D3D3D3'; // Light Gray
-  }
+const getNodeColor = (nodeId: string, allNodes: Node[]) => {
+  const hasChildren = allNodes.some((node) => node.data.parentNode === nodeId);
+  return hasChildren ? "#D3D3D3" : "#00FF00"; // Light Gray for non-leaf, Green for leaf nodes
 };
 
 const App: React.FC = () => {
-  const [nodes, setNodes, onNodesChange] = useNodesState<Node>(initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(initialEdges);
+  const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge[]>([]);
   const [allNodes, setAllNodes] = useState<Node[]>([]);
   const [allEdges, setAllEdges] = useState<Edge[]>([]);
-  const [direction, setDirection] = useState('TB');
-  const [selectedParentNode, setSelectedParentNode] = useState<string>('');
-  const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
+  const [expandedNodes, setExpandedNodes] = useState<string[]>([]);
+  const [direction, setDirection] = useState("TB");
+  const [selectedParentNode, setSelectedParentNode] = useState<string | null>(
+    null
+  );
+
+  const { project } = useReactFlow();
 
   useEffect(() => {
     const fetchNodes = async () => {
       try {
-        const response = await axios.get<NodeData[]>('https://api.example.com/nodes');
+        const response = await axios.get<NodeData[]>("https://api.example.com/nodes");
         const data = response.data;
         const processedNodes: Node[] = data.map((item) => ({
           id: item.node,
-          type: item.type || 'default',
+          type: item.type || "default",
           data: {
             label: item.node,
             value: item.value,
-            graphdepth: item.graphDepth,
+            graphDepth: item.graphDepth,
             parentNode: item.parentNode,
           },
           position: { x: 0, y: 0 },
           draggable: true,
           hidden: true,
-          style: { backgroundColor: getNodeColor(item.type || 'default', false) },
         }));
 
         const processedEdges: Edge[] = data
@@ -120,152 +111,92 @@ const App: React.FC = () => {
         setAllNodes(processedNodes);
         setAllEdges(processedEdges);
 
-        // Set the first node (root node) as the initial node
         if (processedNodes.length > 0) {
           setNodes([{ ...processedNodes[0], hidden: false }]);
+          setSelectedParentNode(processedNodes[0].id);
         }
       } catch (error) {
-        console.error('Error fetching node data', error);
+        console.error("Error fetching node data", error);
       }
     };
 
     fetchNodes();
   }, [setNodes]);
 
-  const generateEdges = useCallback((nodeId: string) => {
-    const newEdges = allNodes
-      .filter((node) => node.data.parentNode === nodeId)
-      .map((node) => ({
-        id: `e-${node.data.parentNode}-${node.id}`,
-        source: node.data.parentNode as string,
-        target: node.id,
-      }));
-    setEdges((prevEdges) => [...prevEdges, ...newEdges]);
-  }, [allNodes, setEdges]);
+  const generateEdges = useCallback(
+    (nodeId: string) => {
+      const newEdges = allNodes
+        .filter((node) => node.data.parentNode === nodeId)
+        .map((node) => ({
+          id: `e-${node.data.parentNode}-${node.id}`,
+          source: node.data.parentNode as string,
+          target: node.id,
+        }));
+      setEdges((prevEdges) => [...prevEdges, ...newEdges]);
+    },
+    [allNodes, setEdges]
+  );
 
-  const expandNode = useCallback((node: Node) => {
-    const childNodes = allNodes.filter((n) => n.data.parentNode === node.id);
-    if (childNodes.length > 0) {
-      const newNodes = [...nodes];
-      const newEdges = [...edges];
+  const expandNode = useCallback(
+    (node: Node) => {
+      const currentExpandedNodes = new Set(expandedNodes);
 
-      childNodes.forEach((child) => {
-        const position = {
-          x: node.position.x + (Math.random() - 0.5) * 200,
-          y: node.position.y + 100,
-        };
-        newNodes.push({
-          ...child,
-          position,
-          hidden: false,
-        });
-
-        newEdges.push({
-          id: `${node.id}-${child.id}`,
-          source: node.id,
-          target: child.id,
-          type: 'smoothstep',
-          animated: false,
-        });
-
-        if (expandedNodes.has(child.id)) {
-          expandNode(child);
+      if (currentExpandedNodes.has(node.id)) {
+        currentExpandedNodes.delete(node.id);
+        const nodesToKeep = nodes.filter(
+          (n) => !allNodes.some((child) => child.data.parentNode === node.id && child.id === n.id)
+        );
+        const edgesToKeep = edges.filter(
+          (e) => !allNodes.some((child) => child.data.parentNode === node.id && e.source === node.id && e.target === child.id)
+        );
+        setNodes(nodesToKeep);
+        setEdges(edgesToKeep);
+      } else {
+        currentExpandedNodes.add(node.id);
+        const childNodes = allNodes.filter((n) => n.data.parentNode === node.id && n.hidden);
+        if (childNodes.length > 0) {
+          childNodes.forEach((child) => {
+            child.hidden = false;
+            child.style = { backgroundColor: getNodeColor(child.id, allNodes) };
+          });
+          setNodes((prevNodes) => {
+            const updatedNodes = [...prevNodes, ...childNodes];
+            return getLayoutedNodes(updatedNodes, edges, direction);
+          });
+          generateEdges(node.id);
         }
-      });
-
-      setNodes(newNodes);
-      setEdges(newEdges);
-    }
-  }, [allNodes, nodes, edges, expandedNodes]);
-
-  const collapseNode = useCallback((nodeId: string) => {
-    const nodesToRemove = new Set<string>();
-    const collectNodesToRemove = (id: string) => {
-      allNodes.forEach((node) => {
-        if (node.data.parentNode === id) {
-          nodesToRemove.add(node.id);
-          collectNodesToRemove(node.id);
-        }
-      });
-    };
-
-    collectNodesToRemove(nodeId);
-
-    setNodes((nds) => nds.filter((node) => !nodesToRemove.has(node.id)));
-    setEdges((eds) => eds.filter((edge) => !nodesToRemove.has(edge.target)));
-
-    // Remove from expanded nodes set
-    setExpandedNodes((prevExpandedNodes) => {
-      const newExpandedNodes = new Set(prevExpandedNodes);
-      nodesToRemove.forEach((id) => newExpandedNodes.delete(id));
-      return newExpandedNodes;
-    });
-  }, [allNodes]);
-
-  const onNodeClick: NodeMouseHandler = useCallback((event, node) => {
-    const currentExpandedNodes = new Set(expandedNodes);
-
-    if (currentExpandedNodes.has(node.id)) {
-      // Collapse the node
-      currentExpandedNodes.delete(node.id);
-      collapseNode(node.id);
-    } else {
-      // Expand the node
-      currentExpandedNodes.add(node.id);
-      expandNode(node);
-    }
-
-    setExpandedNodes(currentExpandedNodes);
-  }, [expandedNodes, expandNode, collapseNode]);
-
-  const onConnect = useCallback(
-    (params: Edge | Connection) => setEdges((eds) => addEdge(params, eds)),
-    [setEdges]
+      }
+      setExpandedNodes(Array.from(currentExpandedNodes));
+    },
+    [allNodes, edges, expandedNodes, nodes, direction, generateEdges]
   );
 
   useEffect(() => {
-    setNodes((nds) => getLayoutedNodes(nds, edges, direction));
-  }, [edges, direction]);
+    const layoutedElements = getLayoutedNodes(nodes, edges, direction);
+    setNodes(layoutedElements);
+    setEdges(layoutedElements.map((n) => n as Edge));
+  }, [nodes.length, edges.length, direction]);
 
-  const handleParentNodeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const selectedNodeId = e.target.value;
-    setSelectedParentNode(selectedNodeId);
-    const selectedNode = allNodes.find((node) => node.id === selectedNodeId);
-    if (selectedNode) {
-      setNodes([{ ...selectedNode, hidden: false }]);
-      setEdges([]);
-    }
-  };
-
-  // Get unique leaf nodes for coloring
-  const uniqueLeafNodes = allNodes.filter((node) => {
-    return !allNodes.some((otherNode) => otherNode.data.parentNode === node.id);
-  });
-
-  // Update node styles with green color for leaf nodes
   useEffect(() => {
-    const updatedNodes = nodes.map((node) => {
-      const isLeaf = uniqueLeafNodes.some((leafNode) => leafNode.id === node.id);
-      return {
-        ...node,
-        style: {
-          ...node.style,
-          backgroundColor: getNodeColor(node.data.type || 'default', isLeaf),
-        },
-      };
-    });
-    setNodes(updatedNodes);
-  }, [nodes, uniqueLeafNodes]);
+    if (selectedParentNode) {
+      const selectedNode = allNodes.find((n) => n.id === selectedParentNode);
+      if (selectedNode) {
+        setNodes([{ ...selectedNode, hidden: false, style: { backgroundColor: getNodeColor(selectedNode.id, allNodes) } }]);
+        setEdges([]);
+        setExpandedNodes([]);
+      }
+    }
+  }, [selectedParentNode, allNodes]);
 
   return (
     <div style={graphContainerStyles}>
-      <div style={navbarStyles}>
+      <div style={controlsStyles}>
         <label style={controlsLabelStyles}>
           Direction:
           <select
-            style={controlsSelectStyles}
             value={direction}
             onChange={(e) => setDirection(e.target.value)}
+            style={controlsSelectStyles}
           >
             <option value="TB">Top-Bottom</option>
             <option value="BT">Bottom-Top</option>
@@ -273,39 +204,33 @@ const App: React.FC = () => {
             <option value="RL">Right-Left</option>
           </select>
         </label>
-        <label style={controlsLabelStyles}>
+        <label style={{ ...controlsLabelStyles, marginLeft: "20px" }}>
           Parent Node:
           <select
+            value={selectedParentNode || ""}
+            onChange={(e) => setSelectedParentNode(e.target.value)}
             style={controlsSelectStyles}
-            value={selectedParentNode}
-            onChange={handleParentNodeChange}
           >
-            {uniqueParentNodes.map((nodeId) => {
-              const node = allNodes.find((n) => n.id === nodeId);
-              return node ? (
-                <option key={node.id} value={node.id}>
-                  {node.data.label}
-                </option>
-              ) : null;
-            })}
+            {allNodes.map((node) => (
+              <option key={node.id} value={node.id}>
+                {node.data.label}
+              </option>
+            ))}
           </select>
         </label>
       </div>
-      <div style={reactflowWrapperStyles}>
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onNodeClick={onNodeClick}
-          onConnect={onConnect}
-          fitView
-        >
-          <Controls />
-          <MiniMap />
-          <Background variant="dots" gap={12} size={1} />
-        </ReactFlow>
-      </div>
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
+        fitView
+        onNodeClick={(event, node) => expandNode(node)}
+      >
+        <MiniMap />
+        <Controls />
+        <Background />
+      </ReactFlow>
     </div>
   );
 };
