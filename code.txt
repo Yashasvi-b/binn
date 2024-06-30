@@ -1,3 +1,326 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import ReactFlow, {
+  MiniMap,
+  Controls,
+  Background,
+  useNodesState,
+  useEdgesState,
+  ReactFlowProvider,
+  Node,
+  Edge,
+} from 'reactflow';
+import 'reactflow/dist/style.css';
+import axios from 'axios';
+import dagre from 'dagre';
+import CustomNode from './CustomNode';  // Import your custom node component
+import {
+  graphContainerStyles,
+  controlsStyles,
+  controlsLabelStyles,
+  controlsSelectStyles,
+} from './styles';
+
+interface NodeData {
+  node: string;
+  type?: string;
+  value?: string;
+  graphDepth: number;
+  parentNode?: string | null;
+}
+
+const initialNodes: Node[] = [];
+const initialEdges: Edge[] = [];
+
+const dagreGraph = new dagre.graphlib.Graph();
+dagreGraph.setDefaultEdgeLabel(() => ({}));
+
+const getLayoutedNodes = (nodes: Node[], edges: Edge[], direction: string = 'TB') => {
+  const nodeWidth = 172;
+  const nodeHeight = 36;
+
+  dagreGraph.setGraph({ rankdir: direction });
+
+  nodes.forEach((node) => {
+    dagreGraph.setNode(node.id, { width: nodeWidth, height: nodeHeight });
+  });
+
+  edges.forEach((edge) => {
+    dagreGraph.setEdge(edge.source, edge.target);
+  });
+
+  dagre.layout(dagreGraph);
+
+  return nodes.map((node) => {
+    const nodeWithPosition = dagreGraph.node(node.id);
+    node.position = {
+      x: nodeWithPosition.x - nodeWidth / 2,
+      y: nodeWithPosition.y - nodeHeight / 2,
+    };
+    return node;
+  });
+};
+
+const App: React.FC = () => {
+  const [nodes, setNodes, onNodesChange] = useNodesState<Node>(initialNodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(initialEdges);
+  const [allNodes, setAllNodes] = useState<Node[]>([]);
+  const [allEdges, setAllEdges] = useState<Edge[]>([]);
+  const [direction, setDirection] = useState('TB');
+  const [selectedParentNode, setSelectedParentNode] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchNodes = async () => {
+      try {
+        const response = await axios.get<NodeData[]>('https://api.example.com/nodes');
+        const data = response.data;
+
+        const processedNodes: Node[] = data.map((item) => {
+          const isLeaf = !data.some(node => node.parentNode === item.node);
+          return {
+            id: item.node,
+            type: 'customNode',  // Use the custom node type
+            data: {
+              label: item.node,
+              value: item.value,
+              graphDepth: item.graphDepth,
+              parentNode: item.parentNode,
+              isLeaf,
+              onExpand: () => expandNode(item.node),
+              onCollapse: () => collapseNode(item.node),
+            },
+            position: { x: 0, y: 0 },
+            draggable: true,
+            hidden: true,
+          };
+        });
+
+        const processedEdges: Edge[] = data
+          .filter((item) => item.parentNode)
+          .map((item) => ({
+            id: `e-${item.parentNode}-${item.node}`,
+            source: item.parentNode as string,
+            target: item.node,
+          }));
+
+        setAllNodes(processedNodes);
+        setAllEdges(processedEdges);
+
+        // Set the first node (root node) as the initial node
+        if (processedNodes.length > 0) {
+          setNodes([{ ...processedNodes[0], hidden: false }]);
+        }
+      } catch (error) {
+        console.error('Error fetching node data', error);
+      }
+    };
+
+    fetchNodes();
+  }, [setNodes]);
+
+  const expandNode = useCallback((nodeId: string) => {
+    const childNodes = allNodes.filter(n => n.data.parentNode === nodeId && n.hidden);
+    if (childNodes.length > 0) {
+      childNodes.forEach(child => {
+        child.hidden = false;
+      });
+      setNodes(prevNodes => {
+        const updatedNodes = [...prevNodes, ...childNodes];
+        return getLayoutedNodes(updatedNodes, edges, direction);
+      });
+      generateEdges(nodeId);
+    }
+  }, [allNodes, edges, direction, setNodes]);
+
+  const collapseNode = useCallback((nodeId: string) => {
+    const childNodes = allNodes.filter(n => n.data.parentNode === nodeId && !n.hidden);
+    if (childNodes.length > 0) {
+      childNodes.forEach(child => {
+        child.hidden = true;
+      });
+      setNodes(prevNodes => {
+        const updatedNodes = prevNodes.filter(n => !childNodes.includes(n));
+        return getLayoutedNodes(updatedNodes, edges, direction);
+      });
+      removeEdges(nodeId);
+    }
+  }, [allNodes, edges, direction, setNodes]);
+
+  const generateEdges = useCallback((nodeId: string) => {
+    const newEdges = allNodes
+      .filter(node => node.data.parentNode === nodeId)
+      .map(node => ({
+        id: `e-${node.data.parentNode}-${node.id}`,
+        source: node.data.parentNode as string,
+        target: node.id,
+      }));
+    setEdges(prevEdges => [...prevEdges, ...newEdges]);
+  }, [allNodes, setEdges]);
+
+  const removeEdges = useCallback((nodeId: string) => {
+    setEdges(prevEdges => prevEdges.filter(edge => edge.source !== nodeId));
+  }, [setEdges]);
+
+  const handleDirectionChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
+    setDirection(event.target.value);
+  };
+
+  const handleParentNodeChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
+    setSelectedParentNode(event.target.value);
+    const selectedNode = allNodes.find(node => node.id === event.target.value);
+    if (selectedNode) {
+      setNodes([selectedNode]);
+      setEdges([]);
+    }
+  };
+
+  const uniqueParentNodes = Array.from(new Set(allNodes.map(node => node.data.parentNode).filter(Boolean)));
+
+  return (
+    <div style={graphContainerStyles}>
+      <div style={controlsStyles}>
+        <label style={controlsLabelStyles}>
+          Direction:
+          <select
+            value={direction}
+            onChange={handleDirectionChange}
+            style={controlsSelectStyles}
+          >
+            <option value="TB">Top-Bottom</option>
+            <option value="BT">Bottom-Top</option>
+            <option value="LR">Left-Right</option>
+            <option value="RL">Right-Left</option>
+          </select>
+        </label>
+        <label style={{ ...controlsLabelStyles, marginLeft: '20px' }}>
+          Parent Node:
+          <select
+            value={selectedParentNode || ''}
+            onChange={handleParentNodeChange}
+            style={controlsSelectStyles}
+          >
+            <option value="">Select Parent Node</option>
+            {uniqueParentNodes.map((key) => (
+              <option key={key} value={key}>
+                {key}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
+        nodeTypes={{ customNode: CustomNode }}
+        fitView
+      >
+        <Controls />
+        <MiniMap />
+        <Background variant="dots" gap={12} size={1} />
+      </ReactFlow>
+    </div>
+  );
+};
+
+const WrappedApp: React.FC = () => (
+  <ReactFlowProvider>
+    <App />
+  </ReactFlowProvider>
+);
+
+export default WrappedApp;
+
+//app.tsx
+
+import React from 'react';
+import { Handle, Position, NodeProps } from 'reactflow';
+import { nodeStyles, buttonStyles } from './styles';
+
+const CustomNode: React.FC<NodeProps> = ({ data, isConnectable }) => {
+  return (
+    <div style={nodeStyles(data.isLeaf)}>
+      <div>
+        <button style={buttonStyles} onClick={data.onExpand}>+</button>
+        <button style={buttonStyles} onClick={data.onCollapse}>-</button>
+      </div>
+      <div>{data.label}</div>
+      <Handle type="target" position={Position.Top} isConnectable={isConnectable} />
+      <Handle type="source" position={Position.Bottom} isConnectable={isConnectable} />
+    </div>
+  );
+};
+
+export default CustomNode;
+
+//cutomnode
+
+export const nodeStyles = (isLeaf: boolean): React.CSSProperties => ({
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'center',
+  backgroundColor: isLeaf ? '#00FF00' : '#D3D3D3', // Green for leaf nodes
+  padding: '10px',
+  borderRadius: '5px',
+  border: '1px solid #ccc',
+});
+
+export const buttonStyles: React.CSSProperties = {
+  margin: '2px',
+};
+
+export const graphContainerStyles: React.CSSProperties = {
+  width: '100vw',
+  height: '100vh',
+};
+
+export const controlsStyles: React.CSSProperties = {
+  display: 'flex',
+  justifyContent: 'center',
+  marginBottom: '10px',
+};
+
+export const controlsLabelStyles: React.CSSProperties = {
+  marginRight: '10px',
+};
+
+export const controlsSelectStyles: React.CSSProperties = {
+  padding: '5px',
+  fontSize: '14px',
+};
+
+//styles.ts
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
 import React, { useState, useCallback, useEffect } from 'react';
 import ReactFlow, {
   MiniMap,
