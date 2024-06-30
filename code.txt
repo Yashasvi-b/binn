@@ -12,7 +12,7 @@ import ReactFlow, {
 import 'reactflow/dist/style.css';
 import axios from 'axios';
 import dagre from 'dagre';
-import CustomNode from './CustomNode';  // Import your custom node component
+import CustomNode from './CustomNode';
 import {
   graphContainerStyles,
   controlsStyles,
@@ -78,7 +78,7 @@ const App: React.FC = () => {
           const isLeaf = !data.some(node => node.parentNode === item.node);
           return {
             id: item.node,
-            type: 'customNode',  // Use the custom node type
+            type: 'customNode',
             data: {
               label: item.node,
               value: item.value,
@@ -105,7 +105,6 @@ const App: React.FC = () => {
         setAllNodes(processedNodes);
         setAllEdges(processedEdges);
 
-        // Set the first node (root node) as the initial node
         if (processedNodes.length > 0) {
           setNodes([{ ...processedNodes[0], hidden: false }]);
         }
@@ -222,7 +221,6 @@ const App: React.FC = () => {
     </div>
   );
 };
-
 const WrappedApp: React.FC = () => (
   <ReactFlowProvider>
     <App />
@@ -232,16 +230,38 @@ const WrappedApp: React.FC = () => (
 export default WrappedApp;
 
 
-import React from 'react';
+iimport React from 'react';
 import { Handle, Position, NodeProps } from 'reactflow';
-import { nodeStyles, buttonStyles } from './styles';
+
+const nodeStyles = (isLeaf: boolean) => ({
+  padding: '10px',
+  borderRadius: '5px',
+  border: '1px solid #ddd',
+  backgroundColor: isLeaf ? '#fff' : '#f3f4f6',
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'center',
+});
+
+const buttonStyles = {
+  cursor: 'pointer',
+  margin: '5px',
+  padding: '5px',
+  borderRadius: '3px',
+  border: '1px solid #ccc',
+  backgroundColor: '#e7e7e7',
+};
 
 const CustomNode: React.FC<NodeProps> = ({ data, isConnectable }) => {
   return (
     <div style={nodeStyles(data.isLeaf)}>
       <div>
-        <button style={buttonStyles} onClick={data.onExpand}>+</button>
-        <button style={buttonStyles} onClick={data.onCollapse}>-</button>
+        {!data.isLeaf && (
+          <>
+            <button style={buttonStyles} onClick={data.onExpand}>+</button>
+            <button style={buttonStyles} onClick={data.onCollapse}>-</button>
+          </>
+        )}
       </div>
       <div>{data.label}</div>
       <Handle type="target" position={Position.Top} isConnectable={isConnectable} />
@@ -251,6 +271,7 @@ const CustomNode: React.FC<NodeProps> = ({ data, isConnectable }) => {
 };
 
 export default CustomNode;
+
 
 
 
