@@ -1,4 +1,61 @@
 import React from 'react';
+import { render, screen, waitFor } from '@testing-library/react';
+import axios from 'axios';
+import MockAdapter from 'axios-mock-adapter';
+import App from './App';
+
+const mock = new MockAdapter(axios);
+
+const mockData = [
+  {
+    node: 'root',
+    type: 'input',
+    value: 'Root Node',
+    name: 'Root',
+    graphDepth: 0,
+    parentNode: null,
+  },
+  {
+    node: 'child1',
+    type: 'default',
+    value: 'Child Node 1',
+    name: 'Child 1',
+    graphDepth: 1,
+    parentNode: 'root',
+  },
+];
+
+describe('API Fetching', () => {
+  beforeEach(() => {
+    mock.reset();
+  });
+
+  test('fetches and displays root node', async () => {
+    mock.onGet('https://api.example.com/nodes?parent=null').reply(200, mockData);
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Root')).toBeInTheDocument();
+    });
+
+    expect(screen.getByText('Root')).toBeVisible();
+  });
+});
+
+
+
+
+
+
+pooooooooooooooooooooo
+
+
+
+
+
+
+import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { act } from 'react-dom/test-utils';
 import rewiremock from 'rewiremock';
