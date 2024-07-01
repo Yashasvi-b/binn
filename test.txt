@@ -1,3 +1,191 @@
+import React from 'react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act } from 'react-dom/test-utils';
+import rewiremock from 'rewiremock';
+import axios from 'axios';
+
+rewiremock('axios').with({
+  get: jest.fn(),
+});
+
+rewiremock.enable();
+const WrappedApp = require('./App').default;
+rewiremock.disable();
+
+const mockNodesData = [
+  { node: '1', graphDepth: 0 },
+  { node: '2', graphDepth: 1, parentNode: '1' },
+  { node: '3', graphDepth: 1, parentNode: '1' },
+  { node: '4', graphDepth: 2, parentNode: '2' },
+];
+
+describe('App Component', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  test('renders without crashing', async () => {
+    axios.get.mockResolvedValueOnce({ data: mockNodesData });
+
+    await act(async () => {
+      render(<WrappedApp />);
+    });
+
+    expect(screen.getByLabelText('Direction:')).toBeInTheDocument();
+    expect(screen.getByLabelText('Parent Node:')).toBeInTheDocument();
+  });
+
+  test('fetches and displays nodes correctly', async () => {
+    axios.get.mockResolvedValueOnce({ data: mockNodesData });
+
+    await act(async () => {
+      render(<WrappedApp />);
+    });
+
+    await waitFor(() => expect(axios.get).toHaveBeenCalledTimes(1));
+    expect(screen.getByText('1')).toBeInTheDocument();
+  });
+
+  test('expands and collapses nodes on click', async () => {
+    axios.get.mockResolvedValueOnce({ data: mockNodesData });
+
+    await act(async () => {
+      render(<WrappedApp />);
+    });
+
+    await waitFor(() => expect(axios.get).toHaveBeenCalledTimes(1));
+
+    const node1 = screen.getByText('1');
+    fireEvent.click(node1);
+
+    await waitFor(() => expect(screen.getByText('2')).toBeInTheDocument());
+    expect(screen.getByText('3')).toBeInTheDocument();
+
+    fireEvent.click(node1);
+    await waitFor(() => expect(screen.queryByText('2')).toBeNull());
+    expect(screen.queryByText('3')).toBeNull();
+  });
+
+  test('changes direction', async () => {
+    axios.get.mockResolvedValueOnce({ data: mockNodesData });
+
+    await act(async () => {
+      render(<WrappedApp />);
+    });
+
+    await waitFor(() => expect(axios.get).toHaveBeenCalledTimes(1));
+
+    const directionSelect = screen.getByLabelText('Direction:');
+    fireEvent.change(directionSelect, { target: { value: 'BT' } });
+
+    expect(directionSelect.value).toBe('BT');
+  });
+
+  test('changes parent node', async () => {
+    axios.get.mockResolvedValueOnce({ data: mockNodesData });
+
+    await act(async () => {
+      render(<WrappedApp />);
+    });
+
+    await waitFor(() => expect(axios.get).toHaveBeenCalledTimes(1));
+
+    const parentNodeSelect = screen.getByLabelText('Parent Node:');
+    fireEvent.change(parentNodeSelect, { target: { value: '1' } });
+
+    expect(parentNodeSelect.value).toBe('1');
+  });
+
+  test('adds edges on connect', async () => {
+    axios.get.mockResolvedValueOnce({ data: mockNodesData });
+
+    await act(async () => {
+      render(<WrappedApp />);
+    });
+
+    await waitFor(() => expect(axios.get).toHaveBeenCalledTimes(1));
+
+    // Since ReactFlow's onConnect is an external library method,
+    // we will mock and simulate an edge addition
+    const onConnect = screen.queryByText('onConnect');
+    fireEvent.connect(onConnect, { source: '1', target: '2' });
+
+    await waitFor(() => expect(screen.queryByText('2')).toBeInTheDocument());
+  });
+
+  test('handles node layout change on direction change', async () => {
+    axios.get.mockResolvedValueOnce({ data: mockNodesData });
+
+    await act(async () => {
+      render(<WrappedApp />);
+    });
+
+    await waitFor(() => expect(axios.get).toHaveBeenCalledTimes(1));
+
+    const directionSelect = screen.getByLabelText('Direction:');
+    fireEvent.change(directionSelect, { target: { value: 'BT' } });
+
+    await waitFor(() => {
+      const node1 = screen.getByText('1');
+      expect(node1).toBeInTheDocument();
+    });
+
+    fireEvent.change(directionSelect, { target: { value: 'LR' } });
+
+    await waitFor(() => {
+      const node1 = screen.getByText('1');
+      expect(node1).toBeInTheDocument();
+    });
+  });
+
+  test('renders correct node colors based on type', async () => {
+    const nodeDataWithTypes = [
+      { node: '1', type: 'input', graphDepth: 0 },
+      { node: '2', type: 'output', graphDepth: 1, parentNode: '1' },
+      { node: '3', type: 'option', graphDepth: 1, parentNode: '1' },
+      { node: '4', graphDepth: 2, parentNode: '2' },
+    ];
+
+    axios.get.mockResolvedValueOnce({ data: nodeDataWithTypes });
+
+    await act(async () => {
+      render(<WrappedApp />);
+    });
+
+    await waitFor(() => expect(axios.get).toHaveBeenCalledTimes(1));
+
+    const node1 = screen.getByText('1');
+    const node2 = screen.getByText('2');
+    const node3 = screen.getByText('3');
+    const node4 = screen.getByText('4');
+
+    expect(node1).toHaveStyle('background-color: #FFD700');
+    expect(node2).toHaveStyle('background-color: #FF6347');
+    expect(node3).toHaveStyle('background-color: #40E0D0');
+    expect(node4).toHaveStyle('background-color: #D3D3D3');
+  });
+
+  test('handles error in fetching nodes', async () => {
+    axios.get.mockRejectedValueOnce(new Error('Error fetching node data'));
+
+    await act(async () => {
+      render(<WrappedApp />);
+    });
+
+    await waitFor(() => expect(axios.get).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText('1')).toBeNull();
+  });
+});
+
+
+
+
+=======================
+
+
+
+
+
 To write test cases for this code, you can use Jest along with React Testing Library. We'll focus on testing key aspects of the React component such as fetching nodes, updating the graph layout, expanding and collapsing nodes, and ensuring the dropdowns are populated correctly.
 
 Here's how you can structure your files:
