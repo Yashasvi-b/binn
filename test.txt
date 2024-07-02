@@ -1,48 +1,37 @@
-import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
-import axios from 'axios';
-import MockAdapter from 'axios-mock-adapter';
-import App from './App';
-
-const mock = new MockAdapter(axios);
-
-const mockData = [
-  {
-    node: 'root',
-    type: 'input',
-    value: 'Root Node',
-    name: 'Root',
-    graphDepth: 0,
-    parentNode: null,
-  },
-  {
-    node: 'child1',
-    type: 'default',
-    value: 'Child Node 1',
-    name: 'Child 1',
-    graphDepth: 1,
-    parentNode: 'root',
-  },
-];
-
-describe('API Fetching', () => {
-  beforeEach(() => {
-    mock.reset();
+it('should render the initial node', () => {
+    const rootNode = screen.getByText('<SCLRootCalcNode>');
+    expect(rootNode).toBeInTheDocument();
   });
 
-  test('fetches and displays root node', async () => {
-    mock.onGet('https://api.example.com/nodes?parent=null').reply(200, mockData);
-
-    render(<App />);
+  it('should expand and collapse nodes correctly', async () => {
+    // Expand the root node
+    const rootNode = screen.getByText('<SCLRootCalcNode>');
+    fireEvent.click(rootNode);
 
     await waitFor(() => {
-      expect(screen.getByText('Root')).toBeInTheDocument();
+      const childNode = screen.getByText('UnearnedDiscount');
+      expect(childNode).toBeInTheDocument();
     });
 
-    expect(screen.getByText('Root')).toBeVisible();
+    // Collapse the root node
+    fireEvent.click(rootNode);
+
+    await waitFor(() => {
+      const childNode = screen.queryByText('UnearnedDiscount');
+      expect(childNode).not.toBeInTheDocument();
+    });
+  });
+
+  it('should handle parent node selection from the dropdown', async () => {
+    const dropdown = screen.getByLabelText('Parent Node:');
+    fireEvent.change(dropdown, { target: { value: '<SCLRootCalcNode>' } });
+
+    await waitFor(() => {
+      const selectedNode = screen.getByText('<SCLRootCalcNode>');
+      expect(selectedNode).toBeInTheDocument();
+    });
   });
 });
-
 
 
 
