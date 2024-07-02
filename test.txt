@@ -1,11 +1,11 @@
-it('should render the initial node', () => {
-    const rootNode = screen.getByText('<SCLRootCalcNode>');
-    expect(rootNode).toBeInTheDocument();
-  });
-
-  it('should expand and collapse nodes correctly', async () => {
+it('should expand and collapse nodes correctly', async () => {
     // Expand the root node
-    const rootNode = screen.getByText('<SCLRootCalcNode>');
+    let rootNode;
+    await waitFor(() => {
+      rootNode = screen.getByText('<SCLRootCalcNode>');
+      expect(rootNode).toBeInTheDocument();
+    });
+
     fireEvent.click(rootNode);
 
     await waitFor(() => {
